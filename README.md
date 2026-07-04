@@ -4,7 +4,7 @@ A local MCP server giving full read/write control over Apple **Mail.app** and **
 
 ## Status
 
-Feature-complete per the original build plan (`../.claude/plans/wise-swimming-gray.md`): all of Mail and Calendar's core scriptable surface is implemented, plus computed availability. Every tool below was exercised through the real MCP protocol against this machine's live Mail.app/Calendar.app during development, not just type-checked — several real bugs were found and fixed or explicitly documented as platform limitations in the process (see below).
+Feature-complete: all of Mail and Calendar's core scriptable surface is implemented, plus computed availability. Every tool below was exercised through the real MCP protocol against a live Mail.app/Calendar.app during development, not just type-checked — several real bugs were found and fixed or explicitly documented as platform limitations in the process (see below).
 
 ## Tool inventory
 

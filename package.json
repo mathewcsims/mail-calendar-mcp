@@ -8,7 +8,7 @@
     "mail-calendar-mcp": "./dist/index.js"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && mkdir -p dist/jxa/scripts && cp src/jxa/scripts/*.js dist/jxa/scripts/",
     "dev": "tsx src/index.ts",
     "test": "vitest run"
   },

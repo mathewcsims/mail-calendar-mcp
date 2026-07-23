@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { runJxa } from "../../jxa/runner.js";
+import { helperWithJxaFallback, runHelper } from "../../helper/backend.js";
 import type { ToolDef } from "../register.js";
 
 export interface BusyInterval {
@@ -56,13 +57,29 @@ export const calendarAvailabilityTools: ToolDef<z.ZodRawShape>[] = [
     annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
     handler: async (args: Record<string, unknown>) => {
       const { calendars, startDate, endDate } = args as { calendars: unknown[]; startDate: string; endDate: string };
-      const result = await runJxa<{ intervals: BusyInterval[] }>(
-        "calendar-events",
-        { op: "listBusyIntervals", calendars, startDate, endDate },
-        { appName: "Calendar", timeoutMs: 20_000 }
+      const intervals = await helperWithJxaFallback<BusyInterval[]>(
+        async () => {
+          const result = await runHelper<{
+            events: { calendarName: string | null; summary: string | null; startDate: string; endDate: string }[];
+          }>({ op: "listEvents", calendars, startDate, endDate, limit: 1000 }, { timeoutMs: 20_000 });
+          return result.events.map((e) => ({
+            calendarName: e.calendarName,
+            summary: e.summary,
+            startDate: e.startDate,
+            endDate: e.endDate,
+          }));
+        },
+        async () => {
+          const result = await runJxa<{ intervals: BusyInterval[] }>(
+            "calendar-events",
+            { op: "listBusyIntervals", calendars, startDate, endDate },
+            { appName: "Calendar", timeoutMs: 20_000 }
+          );
+          return result.intervals;
+        }
       );
-      const gaps = computeFreeGaps(result.intervals, new Date(startDate), new Date(endDate));
-      return { busy: result.intervals, free: gaps };
+      const gaps = computeFreeGaps(intervals, new Date(startDate), new Date(endDate));
+      return { busy: intervals, free: gaps };
     },
   },
 ];

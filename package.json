@@ -8,7 +8,8 @@
     "mail-calendar-mcp": "./dist/index.js"
   },
   "scripts": {
-    "build": "tsc && mkdir -p dist/jxa/scripts && cp src/jxa/scripts/*.js dist/jxa/scripts/",
+    "build": "tsc && mkdir -p dist/jxa/scripts && cp src/jxa/scripts/*.js dist/jxa/scripts/ && npm run build:helper",
+    "build:helper": "mkdir -p bin && swiftc -swift-version 5 -O helper/main.swift -o bin/calendar-helper -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __info_plist -Xlinker helper/Info.plist && codesign --force --sign - --identifier com.mathewcsims.mail-calendar-mcp.calendar-helper bin/calendar-helper",
     "dev": "tsx src/index.ts",
     "test": "vitest run"
   },

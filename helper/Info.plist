@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleIdentifier</key>
+	<string>com.mathewcsims.mail-calendar-mcp.calendar-helper</string>
+	<key>CFBundleName</key>
+	<string>calendar-helper</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>NSCalendarsUsageDescription</key>
+	<string>mail-calendar-mcp needs Calendar access to read and manage your events on your behalf.</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>mail-calendar-mcp needs full Calendar access to read and manage your events on your behalf.</string>
+</dict>
+</plist>

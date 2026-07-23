@@ -6,6 +6,8 @@ A local MCP server giving full read/write control over Apple **Mail.app** and **
 
 Feature-complete: all of Mail and Calendar's core scriptable surface is implemented, plus computed availability. Every tool below was exercised through the real MCP protocol against a live Mail.app/Calendar.app during development, not just type-checked — several real bugs were found and fixed or explicitly documented as platform limitations in the process (see below).
 
+**Calendar runs on a native EventKit backend by default** (`helper/main.swift`, compiled to `bin/calendar-helper` by `npm run build`). This exists because Calendar.app's AppleScript bridge silently no-ops on several operations. The native backend fixes the confirmed recurring-event-delete and calendar-delete bugs, and adds capabilities AppleScript cannot express at all: per-occurrence vs whole-series edits/deletes (`occurrenceDate` + `span`), stable `calendarId`s, calendar source selection, richer event detail (attendees/alarms/detached-occurrence status), and cross-calendar queries in one call. If the helper binary is missing or lacks Calendar permission, calendar tools fall back to the JXA path automatically (safe even for writes — the permission check runs before any operation). `MCM_CALENDAR_BACKEND=jxa` forces the old path. Mail remains JXA-only: there is no public native API for Mail.app automation.
+
 ## Tool inventory
 
 ### Mail
@@ -31,12 +33,13 @@ Feature-complete: all of Mail and Calendar's core scriptable surface is implemen
 | Tool | Notes |
 |---|---|
 | `calendar_list_calendars` | Read-only. Returns an `index` for disambiguating duplicate calendar names (confirmed real on this machine: two calendars named "Calendar", two named "Birthdays") |
-| `calendar_create_calendar`, `calendar_rename_calendar` | Works reliably |
-| `calendar_delete_calendar` | **Confirmed broken** on at least some calendars — `[IRREVERSIBLE]`, requires `confirm:true`, expect `PLATFORM_LIMITATION` |
+| `calendar_create_calendar`, `calendar_rename_calendar` | Works reliably. Create accepts `sourceName` (EventKit backend) to pick the account |
+| `calendar_list_sources` | Calendar accounts/sources, for `calendar_create_calendar` placement. EventKit backend only |
+| `calendar_delete_calendar` | Reliable via the EventKit backend. (JXA fallback confirmed broken for this — expect `PLATFORM_LIMITATION` there.) `[IRREVERSIBLE]`, requires `confirm:true` |
 | `calendar_list_events`, `calendar_search_events` | Read-only. `startDate`/`endDate` are **required**, capped at 366 days — confirmed an unbounded query hangs indefinitely |
-| `calendar_get_event` | By `uid` (the one calendar-related object that does have a stable id via scripting) |
-| `calendar_create_event`, `calendar_update_event` | Verify-after-write; worked reliably in testing on this machine |
-| `calendar_delete_event` | **Confirmed broken specifically for recurring events** — reports success but silently no-ops (reproduced twice). Detected via re-read, returns `PLATFORM_LIMITATION` rather than a false success. `[IRREVERSIBLE]`, requires `confirm:true` |
+| `calendar_get_event` | By `uid`; EventKit backend adds attendees, alarms, recurrence detail, and per-occurrence fetch via `occurrenceDate` |
+| `calendar_create_event`, `calendar_update_event` | Reliable. EventKit backend adds `alarmMinutesBefore` and, on update, `occurrenceDate`/`span` for one-occurrence vs whole-series edits — semantics AppleScript can't express |
+| `calendar_delete_event` | Reliable via the EventKit backend, including recurring events and per-occurrence deletes (`occurrenceDate`/`span`). (The JXA fallback silently no-ops on recurring events — confirmed, caught by verify-after-write.) `[IRREVERSIBLE]`, requires `confirm:true` |
 | `calendar_add_alarm`, `calendar_list_alarms`, `calendar_remove_all_alarms` | Works reliably (display/sound/mail kinds) |
 | `calendar_list_attendees`, `calendar_add_attendee` | Worked reliably in testing (better than pessimistic community reports this was designed against). Adding an attendee surfaces an extra `email:null` self/organizer entry (`isLikelyOrganizerSelf:true`) — not a bug |
 | `calendar_remove_attendee` | **Unverified** — implemented but not live-tested |
@@ -58,13 +61,16 @@ npm test        # runs the vitest suite (Node-side logic only, see Testing below
 
 Add to your MCP client config (Claude Desktop / Claude Code) pointing at `dist/index.js` (after `npm run build`) or `src/index.ts` via `npx tsx` for development.
 
-### One-time macOS permission grant (Automation)
+Building requires the Xcode Command Line Tools (`swiftc`) for the native calendar helper.
 
-The first time the server actually calls into Mail.app or Calendar.app, macOS will show a system prompt: **"`<your terminal/host process>` wants to control `Mail`/`Calendar`."** You must click **OK**. This is a one-time grant per host-process identity, managed entirely by macOS — no code signing or entitlements needed for this path. If you ever deny it by mistake, re-enable it under:
+### One-time macOS permission grants
 
-**System Settings → Privacy & Security → Automation → (your terminal/Node host) → Mail / Calendar** (toggle on).
+Two separate macOS permissions are involved (both one-time, both per host app — the app that spawns the server, e.g. Claude Desktop or your terminal):
 
-If a tool call ever fails with error code `AUTOMATION_NOT_AUTHORIZED`, this is the setting to check.
+1. **Automation** (Mail + Calendar via JXA): the first JXA call triggers "`<host>` wants to control `Mail`/`Calendar`" — click OK. Re-enable under **System Settings → Privacy & Security → Automation** if ever denied.
+2. **Calendars — Full Access** (native EventKit backend): the host app needs Full Access under **System Settings → Privacy & Security → Calendars**. Note macOS may silently grant only "Add Events Only" without ever prompting — if `calendar_app_status` reports the helper unauthorized, flip that entry to Full Access manually. Until then, calendar tools transparently fall back to JXA.
+
+If a tool call fails with error code `AUTOMATION_NOT_AUTHORIZED`, these are the settings to check. The ad-hoc code signature on `bin/calendar-helper` changes on every rebuild, which can re-trigger the Calendars grant.
 
 ## Important gotcha: `fromAddress`
 
@@ -93,9 +99,9 @@ Creating a draft or sending without specifying `fromAddress` silently uses Mail.
 - `mail_rename_mailbox` — the property assignment is rejected outright.
 - `mail_delete_mailbox` — fails on cloud-synced accounts (confirmed on iCloud); untested on local mailboxes.
 - `mail_add_attachment_to_draft` — syntax unverified, no live test possible; treat with suspicion.
-- `calendar_delete_calendar` — fails on at least some calendars.
-- `calendar_delete_event` on a **recurring** event — reports success without actually deleting. This is the most important one: it's silently wrong unless caught, which is why every mutating Calendar tool verifies its result before reporting success.
-- `calendar_remove_attendee` — implemented but not live-tested; treat with suspicion until verified.
+- `calendar_delete_calendar` — **fixed by the EventKit backend**; the JXA fallback remains broken.
+- `calendar_delete_event` on a **recurring** event — **fixed by the EventKit backend**; the JXA fallback reports success without actually deleting (silently wrong unless caught, which is why the JXA path verifies its result before reporting success).
+- `calendar_remove_attendee` — implemented but not live-tested; treat with suspicion until verified. (EventKit's public API cannot write attendees at all, so this stays on JXA regardless of backend.)
 
 ## Testing
 
